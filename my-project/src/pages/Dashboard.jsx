@@ -38,8 +38,11 @@ export default function Dashboard() {
             </div>
 
             {/* Add Works */}
-            <div className="group relative bg-gray-800 p-6 rounded-2xl shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer">
-              <div className="absolute inset-0 bg-gradient-to-br from-green-500 to-teal-500 opacity-10 rounded-2xl blur-xl"></div>
+            <div
+              className="group relative bg-gray-800 p-6 rounded-2xl shadow-lg hover:scale-105 transition-transform duration-300 cursor-pointer"
+              onClick={() => navigate("/add-work")}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-green-500 to-teal-500 opacity-10 rounded-2xl blur-xl "></div>
               <Briefcase className="h-12 w-12 text-green-400 mx-auto mb-4 group-hover:scale-110 transition-transform" />
               <h2 className="text-xl font-semibold text-center">Add Works</h2>
               <p className="text-gray-400 text-center mt-2">

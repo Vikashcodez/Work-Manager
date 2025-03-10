@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Employee = require("../models/Employee");
 
 module.exports = async (req, res, next) => {
   try {
@@ -11,14 +12,18 @@ module.exports = async (req, res, next) => {
 
     // ✅ 2. Verify JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // ✅ 3. Fetch user details & attach to `req.user`
-    const user = await User.findById(decoded.id).select("-password"); // Exclude password for security
+
+    // ✅ 3. Check if the user is an Admin or Employee
+    let user = await User.findById(decoded.id).select("-password"); // Exclude password
+    if (!user) {
+      user = await Employee.findById(decoded.id).select("-password"); // Check in employees
+    }
+
     if (!user) {
       return res.status(401).json({ msg: "Unauthorized: User not found" });
     }
 
-    req.user = user;
+    req.user = user; // ✅ Attach user/employee data to request
     next(); // Proceed to the next middleware
 
   } catch (error) {

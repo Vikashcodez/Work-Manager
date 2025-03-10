@@ -7,13 +7,13 @@ const Employee = require("../models/Employee");
 
 const router = express.Router();
 
-// 📝 User Registration (Admins Only)
+// 🔹 User Registration (Admins Only)
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, confirmPassword, organization, position, address } = req.body;
+    const { name, email, password, confirmPassword, organization, position, address } = req.body;
 
     // ❌ Validate required fields
-    if (!email || !password || !confirmPassword || !organization || !position || !address) {
+    if (!name || !email || !password || !confirmPassword || !organization || !position || !address) {
       return res.status(400).json({ msg: "Please fill in all fields" });
     }
 
@@ -33,6 +33,7 @@ router.post("/register", async (req, res) => {
 
     // 📌 Create new admin user
     const newUser = new User({
+      name,
       email,
       password: hashedPassword,
       organization,
@@ -87,13 +88,13 @@ router.post("/login", async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send user details (Auto-fetch organization for employees)
+    // ✅ Send user details (Ensure `_id` is returned)
     res.json({
       msg: "Login successful",
       token,
       user: {
-        id: user._id,
-        name: user.name,
+        _id: user._id,  // ✅ Ensure frontend receives `_id`
+        name: user.name || "Employee",
         email: user.email,
         position: user.position || "Admin",
         organization: user.organization || "N/A",
@@ -134,17 +135,12 @@ router.get(
 
 // 🔥 Logout Route
 router.get("/logout", (req, res) => {
-  req.logout((err) => {
-    if (err) {
-      return res.status(500).json({ msg: "Logout failed" });
-    }
-    res.clearCookie("token"); // ✅ Clear authentication token
-    res.redirect(process.env.CLIENT_URL + "/login");
-  });
+  res.clearCookie("token");
+  res.json({ msg: "Logged out successfully" });
 });
 
 // 🔥 Check Authentication Status
-router.get("/check-auth", (req, res) => {
+router.get("/check-auth", async (req, res) => {
   const token = req.cookies.token;
   if (!token) {
     return res.json({ isAuthenticated: false });
@@ -152,17 +148,15 @@ router.get("/check-auth", (req, res) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const model = decoded.role === "employee" ? Employee : User; // ✅ Check if employee or admin
+    const model = decoded.role === "employee" ? Employee : User;
 
-    model.findById(decoded.id)
-      .select("-password") // ✅ Exclude password from response
-      .then((user) => {
-        if (!user) {
-          res.clearCookie("token");
-          return res.json({ isAuthenticated: false });
-        }
-        res.json({ isAuthenticated: true, user });
-      });
+    const user = await model.findById(decoded.id).select("-password");
+    if (!user) {
+      res.clearCookie("token");
+      return res.json({ isAuthenticated: false });
+    }
+
+    res.json({ isAuthenticated: true, user });
   } catch (error) {
     res.clearCookie("token");
     res.json({ isAuthenticated: false });
