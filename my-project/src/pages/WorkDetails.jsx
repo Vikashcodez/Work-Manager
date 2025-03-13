@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { ArrowLeft, Calendar, User, Clock, AlertCircle, CheckCircle, Info } from "lucide-react";
+import { 
+  ArrowLeft, Calendar, User, Clock, AlertCircle, 
+  CheckCircle, Info, ChevronDown, MessageSquare 
+} from "lucide-react";
 
 export default function WorkDetails() {
     const { id } = useParams();
@@ -10,6 +13,11 @@ export default function WorkDetails() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [currentStage, setCurrentStage] = useState(0);
+    const [updating, setUpdating] = useState(false);
+    const [comment, setComment] = useState("");
+    const [timeSpent, setTimeSpent] = useState("");
+    const [activityLog, setActivityLog] = useState([]);
+    const [expandedSection, setExpandedSection] = useState("details");
 
     useEffect(() => {
         fetchWorkDetails();
@@ -18,16 +26,15 @@ export default function WorkDetails() {
     const fetchWorkDetails = async () => {
         try {
             console.log(`📡 Fetching work details for ID: ${id}`);
-            const res = await axios.get(`http://localhost:5000/works/${id}`, {
-                withCredentials: true,
-            });
+            const res = await axios.get(`http://localhost:5000/works/${id}`, { withCredentials: true });
 
             if (res.status === 200) {
                 console.log("✅ Work details fetched successfully:", res.data);
                 setWork(res.data);
-                setCurrentStage(0);
-            } else {
-                console.warn("⚠️ Unexpected response:", res);
+                setCurrentStage(res.data.currentStage || 0);
+                
+                // Also fetch activity logs
+                fetchActivityLogs();
             }
         } catch (err) {
             console.error("🚨 Error fetching work details:", err.response?.data || err.message);
@@ -37,249 +44,443 @@ export default function WorkDetails() {
         }
     };
 
-    // Priority badge renderer
-    const PriorityBadge = ({ priority = "medium" }) => {
-        const priorityMap = {
-            high: { color: "bg-red-500", icon: <AlertCircle className="w-4 h-4 mr-1" /> },
-            medium: { color: "bg-orange-500", icon: <Info className="w-4 h-4 mr-1" /> },
-            low: { color: "bg-green-500", icon: <CheckCircle className="w-4 h-4 mr-1" /> },
-        };
+    const fetchActivityLogs = async () => {
+        try {
+            const res = await axios.get(`http://localhost:5000/works/${id}/activities`, { withCredentials: true });
+            if (res.status === 200) {
+                setActivityLog(res.data);
+            }
+        } catch (err) {
+            console.error("Error fetching activity logs:", err);
+        }
+    };
 
-        const { color, icon } = priorityMap[priority.toLowerCase()] || priorityMap.medium;
+    // Handle Stage Update with comments and time tracking
+    const handleStageChange = async (newStage) => {
+        // Remove the conditional return that was preventing updates
+        // if (newStage === currentStage) return;
+        
+        // Add validation for comment
+        if (!comment.trim()) {
+            alert("Please add a comment before updating the status.");
+            return;
+        }
+        
+        setUpdating(true);
+        try {
+            const payload = {
+                stageIndex: newStage,
+                comment: comment || `Updated status to ${work.stages[newStage]}`,
+                timeSpent: timeSpent || "0h",
+            };
+    
+            const res = await axios.put(
+                `http://localhost:5000/works/update-stage/${id}`,
+                payload,
+                { withCredentials: true }
+            );
+    
+            if (res.status === 200) {
+                console.log("✅ Status updated:", res.data);
+                setComment("");
+                setTimeSpent("");
+    
+                // ✅ Fetch the updated work details to refresh UI
+                fetchWorkDetails();  
+            }
+        } catch (err) {
+            console.error("🚨 Error updating status:", err.response?.data || err.message);
+        } finally {
+            setUpdating(false);
+        }
+    };
+    
+    // Add a comment without changing stage
+    const addComment = async () => {
+        if (!comment.trim()) return;
+        
+        try {
+            const payload = {
+                comment: comment,
+                timeSpent: timeSpent || "0h"
+            };
+            
+            const res = await axios.post(
+                `http://localhost:5000/works/${id}/comment`,
+                payload,
+                { withCredentials: true }
+            );
 
-        return (
-            <span className={`flex items-center ${color} text-white text-xs px-2 py-1 rounded-full`}>
-                {icon}
-                {priority.toUpperCase()}
-            </span>
-        );
+            if (res.status === 200) {
+                console.log("✅ Comment added:", res.data);
+                setComment("");
+                setTimeSpent("");
+                fetchActivityLogs(); // Refresh activity logs
+            }
+        } catch (err) {
+            console.error("🚨 Error adding comment:", err);
+        }
     };
 
     // Calculate days remaining
-    const getDaysRemaining = (deadline) => {
+    const getDaysRemaining = () => {
+        if (!work?.deadline) return "No deadline";
+        const deadline = new Date(work.deadline);
         const today = new Date();
-        const deadlineDate = new Date(deadline);
-        const diffTime = deadlineDate - today;
+        const diffTime = deadline - today;
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays;
+        
+        if (diffDays < 0) return "Overdue";
+        if (diffDays === 0) return "Due today";
+        return `${diffDays} days remaining`;
     };
 
-    // Status badge renderer
-    const StatusBadge = ({ status = "in progress" }) => {
-        const statusMap = {
-            "not started": "bg-gray-500",
-            "in progress": "bg-blue-500",
-            "review": "bg-purple-500",
-            "completed": "bg-green-500",
-            "blocked": "bg-red-500",
-        };
+    // Get status class for deadline
+    const getDeadlineStatusClass = () => {
+        if (!work?.deadline) return "text-gray-500";
+        const deadline = new Date(work.deadline);
+        const today = new Date();
+        const diffTime = deadline - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays < 0) return "text-red-600";
+        if (diffDays <= 2) return "text-amber-500";
+        return "text-green-600";
+    };
 
-        return (
-            <span className={`${statusMap[status.toLowerCase()] || "bg-blue-500"} text-white text-xs px-2 py-1 rounded-full`}>
-                {status.toUpperCase()}
-            </span>
-        );
+    // Format date to readable string
+    const formatDate = (dateString) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString() + " at " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    // Toggle section expansion
+    const toggleSection = (section) => {
+        setExpandedSection(expandedSection === section ? null : section);
     };
 
     return (
         <div className="min-h-screen bg-gray-100 text-gray-800">
-            {/* Header section */}
+            {/* Header */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        <button
-                            onClick={() => navigate(-1)}
-                            className="flex items-center text-gray-600 hover:text-blue-600 transition-colors"
-                        >
+                        <button onClick={() => navigate(-1)} className="flex items-center text-gray-600 hover:text-blue-600">
                             <ArrowLeft className="w-4 h-4 mr-2" />
                             Back to Dashboard
                         </button>
-
-                        {!loading && !error && work && (
-                            <div className="flex items-center space-x-3">
-                                <StatusBadge status={work.status || "in progress"} />
-                                <PriorityBadge priority={work.priority || "medium"} />
+                        {work && (
+                            <div className="flex items-center">
+                                <span className={`text-sm font-medium ${getDeadlineStatusClass()}`}>
+                                    {getDaysRemaining()}
+                                </span>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Main content */}
-            <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            {/* Main Content */}
+            <div className="max-w-7xl mx-auto px-4 py-6">
                 {loading ? (
-                    <div className="bg-white rounded-lg shadow p-8 flex justify-center items-center">
-                        <div className="animate-pulse flex flex-col items-center">
-                            <div className="h-8 w-64 bg-gray-200 rounded mb-4"></div>
-                            <div className="h-4 w-32 bg-gray-200 rounded"></div>
-                        </div>
-                    </div>
+                    <p className="text-gray-400">Loading...</p>
                 ) : error ? (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-                        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                        <p className="text-lg text-red-700">{error}</p>
-                        <button
-                            onClick={() => navigate(-1)}
-                            className="mt-4 bg-red-100 text-red-700 px-4 py-2 rounded-md hover:bg-red-200 transition-colors"
-                        >
-                            Return to Dashboard
-                        </button>
-                    </div>
+                    <p className="text-red-500">{error}</p>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Left column - Main ticket info */}
-                        <div className="lg:col-span-2">
-                            <div className="bg-white rounded-lg shadow overflow-hidden">
-                                {/* Ticket header */}
-                                <div className="border-b border-gray-200 bg-gray-50 px-6 py-4">
-                                    <div className="flex items-center justify-between">
-                                        <h1 className="text-2xl font-bold text-gray-900">{work.title}</h1>
-                                        <div className="text-sm text-gray-500">
-                                            Work-Id:- {work.workId || "N/A"}
+                        {/* Left Section */}
+                        <div className="lg:col-span-2 space-y-6">
+                            {/* Work Header */}
+                            <div className="bg-white shadow rounded-lg p-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h1 className="text-2xl font-bold">{work.title}</h1>
+                                    <span className={`px-3 py-1 text-sm font-medium rounded-full ${
+                                        currentStage === work.stages.length - 1 
+                                            ? "bg-green-100 text-green-800" 
+                                            : "bg-blue-100 text-blue-800"
+                                    }`}>
+                                        {work.stages[currentStage]}
+                                    </span>
+                                </div>
+                                
+                                <div className="text-sm text-gray-500 flex items-center gap-4 mb-4">
+                                    <span>Work ID: {work.workId || id.substring(0, 8)}</span>
+                                    <span>•</span>
+                                    <span>Assigned: {work.assignedTo || "Unassigned"}</span>
+                                </div>
+
+                                {/* Progress Tracker (JIRA-style) */}
+                                <div className="relative mb-6">
+                                    <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
+                                        <div 
+                                            style={{ width: `${((currentStage + 1) / work.stages.length) * 100}%` }}
+                                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                                        ></div>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        {work.stages?.map((stage, index) => (
+                                            <div 
+                                                key={index} 
+                                                className="relative flex flex-col items-center"
+                                                style={{ 
+                                                    left: `${index === 0 ? 0 : index === work.stages.length - 1 ? 0 : '-12px'}`,
+                                                    right: `${index === work.stages.length - 1 ? 0 : 'auto'}`
+                                                }}
+                                            >
+                                                <button
+                                                    className={`flex items-center justify-center w-8 h-8 rounded-full border text-sm font-medium ${
+                                                        index < currentStage
+                                                            ? "bg-blue-500 text-white"
+                                                            : index === currentStage
+                                                            ? "bg-blue-600 text-white ring-2 ring-blue-300"
+                                                            : "bg-gray-200 text-gray-500"
+                                                    }`}
+                                                    onClick={() => handleStageChange(index)}
+                                                    disabled={updating}
+                                                >
+                                                    {index + 1}
+                                                </button>
+                                                <span className="text-xs mt-1 text-gray-500 max-w-[80px] text-center">
+                                                    {stage}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Work Content Accordion */}
+                            <div className="bg-white shadow rounded-lg overflow-hidden">
+                                {/* Description Section */}
+                                <div className="border-b border-gray-200">
+                                    <button 
+                                        className="w-full px-6 py-4 text-left flex justify-between items-center"
+                                        onClick={() => toggleSection("details")}
+                                    >
+                                        <span className="text-sm font-medium text-gray-800">Work Details</span>
+                                        <ChevronDown className={`w-4 h-4 text-gray-500 transform ${expandedSection === "details" ? "rotate-180" : ""}`} />
+                                    </button>
+                                    {expandedSection === "details" && (
+                                        <div className="px-6 py-4 bg-gray-50">
+                                            <h3 className="text-sm font-medium mb-2">Description</h3>
+                                            <p className="text-gray-700 mb-4">{work.description}</p>
+                                            
+                                            <h3 className="text-sm font-medium mb-2">Work Details</h3>
+                                            <p className="text-gray-700">{work.workDescription}</p>
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
 
-                                {/* Progress tracker */}
-                                <div className="px-6 py-4 border-b border-gray-200">
-                                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">Progress</h2>
-                                    <div className="flex items-center gap-1 overflow-x-auto pb-2">
-                                        {work.stages?.length > 0 ? (
-                                            work.stages.map((stage, index) => (
-                                                <div key={index} className="flex items-center">
-                                                    <div
-                                                        className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full font-medium text-sm ${index < currentStage
-                                                                ? "bg-green-100 text-green-700 border border-green-300"
-                                                                : index === currentStage
-                                                                    ? "bg-blue-100 text-blue-700 border-2 border-blue-500"
-                                                                    : "bg-gray-100 text-gray-500 border border-gray-300"
-                                                            }`}
+                                {/* Activity Log */}
+                                <div className="border-b border-gray-200">
+                                    <button 
+                                        className="w-full px-6 py-4 text-left flex justify-between items-center"
+                                        onClick={() => toggleSection("activity")}
+                                    >
+                                        <span className="text-sm font-medium text-gray-800">Activity & Comments</span>
+                                        <ChevronDown className={`w-4 h-4 text-gray-500 transform ${expandedSection === "activity" ? "rotate-180" : ""}`} />
+                                    </button>
+                                    {expandedSection === "activity" && (
+                                        <div className="px-6 py-4 bg-gray-50">
+                                            <div className="space-y-4 mb-6">
+                                                {activityLog && activityLog.length > 0 ? (
+                                                    activityLog.map((activity, index) => (
+                                                        <div key={index} className="flex gap-3">
+                                                            <div className="flex-shrink-0">
+                                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                                                    <User className="w-4 h-4 text-blue-600" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-grow">
+                                                                <div className="flex justify-between">
+                                                                    <h4 className="text-sm font-medium">{activity.user || "System"}</h4>
+                                                                    <span className="text-xs text-gray-500">{formatDate(activity.timestamp)}</span>
+                                                                </div>
+                                                                <p className="text-sm text-gray-700">{activity.comment}</p>
+                                                                {activity.timeSpent && (
+                                                                    <p className="text-xs text-gray-500 mt-1">
+                                                                        Time spent: {activity.timeSpent}
+                                                                    </p>
+                                                                )}
+                                                                {activity.stageChange && (
+                                                                    <p className="text-xs text-blue-600 mt-1">
+                                                                        Changed status to "{activity.stageChange}"
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-gray-500 text-sm">No activity recorded yet.</p>
+                                                )}
+                                            </div>
+
+                                            {/* Add Comment */}
+                                            <div className="border-t border-gray-200 pt-4">
+                                                <h3 className="text-sm font-medium mb-2">Add Comment</h3>
+                                                <textarea
+                                                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="Add a comment..."
+                                                    rows="3"
+                                                    value={comment}
+                                                    onChange={(e) => setComment(e.target.value)}
+                                                ></textarea>
+                                                <div className="flex items-center mt-2">
+                                                    <label className="text-sm text-gray-500 mr-2">Time spent:</label>
+                                                    <input
+                                                        type="text"
+                                                        className="border rounded px-2 py-1 w-20 text-sm"
+                                                        placeholder="1h 30m"
+                                                        value={timeSpent}
+                                                        onChange={(e) => setTimeSpent(e.target.value)}
+                                                    />
+                                                    <button
+                                                        className="ml-auto bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                                                        onClick={addComment}
                                                     >
-                                                        {index + 1}
-                                                    </div>
-                                                    <div
-                                                        className={`h-1 w-12 ${index < work.stages.length - 1
-                                                                ? index < currentStage
-                                                                    ? "bg-green-500"
-                                                                    : "bg-gray-200"
-                                                                : "hidden"
-                                                            }`}
-                                                    ></div>
-                                                    <div className="absolute mt-12 -ml-10 w-20 text-center">
-                                                        <p className={`text-xs ${index < currentStage
-                                                                ? "text-green-600"
-                                                                : index === currentStage
-                                                                    ? "text-blue-600 font-medium"
-                                                                    : "text-gray-500"
-                                                            }`}>
-                                                            {stage.length > 10 ? stage.slice(0, 10) + "..." : stage}
-                                                        </p>
-                                                    </div>
+                                                        Add Comment
+                                                    </button>
                                                 </div>
-                                            ))
-                                        ) : (
-                                            <p className="text-gray-500 text-sm">No stages available</p>
-                                        )}
-                                    </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-
-                                {/* Description */}
-                                <div className="px-6 py-4">
-                                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">Description</h2>
-                                    <div className="prose max-w-none text-gray-700 bg-gray-50 p-4 rounded-md">
-                                        {work.description}
-                                    </div>
-                                </div>
-
-                                {/* Detailed work description */}
-                                <div className="px-6 py-4 border-t border-gray-200">
-                                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">Work Details</h2>
-                                    <div className="prose max-w-none text-gray-700 bg-gray-50 p-4 rounded-md whitespace-pre-line">
-                                        {work.workDescription}
-                                    </div>
+                                
+                                {/* Update Status Section */}
+                                <div>
+                                    <button 
+                                        className="w-full px-6 py-4 text-left flex justify-between items-center"
+                                        onClick={() => toggleSection("status")}
+                                    >
+                                        <span className="text-sm font-medium text-gray-800">Update Status</span>
+                                        <ChevronDown className={`w-4 h-4 text-gray-500 transform ${expandedSection === "status" ? "rotate-180" : ""}`} />
+                                    </button>
+                                    {expandedSection === "status" && (
+                                        <div className="px-6 py-4 bg-gray-50">
+                                            <h3 className="text-sm font-medium mb-2">Current Status: <span className="text-blue-600">{work.stages[currentStage]}</span></h3>
+                                            
+                                            <div className="mb-4">
+                                                <label className="text-sm text-gray-700 block mb-2">Update Status</label>
+                                                <div className="relative">
+                                                    <select
+                                                        className="w-full p-2 border rounded-lg text-gray-800 pr-10"
+                                                        value={currentStage}
+                                                        onChange={(e) => setCurrentStage(Number(e.target.value))}
+                                                        disabled={updating}
+                                                    >
+                                                        {work.stages?.map((stage, index) => (
+                                                            <option key={index} value={index}>
+                                                                {stage}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <ChevronDown className="absolute top-3 right-3 w-4 h-4 text-gray-500" />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="mb-4">
+                                                <label className="text-sm text-gray-700 block mb-2">Comment (required)</label>
+                                                <textarea
+                                                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="Describe what you've done or why you're changing the status..."
+                                                    rows="3"
+                                                    value={comment}
+                                                    onChange={(e) => setComment(e.target.value)}
+                                                ></textarea>
+                                            </div>
+                                            
+                                            <div className="mb-4">
+                                                <label className="text-sm text-gray-700 block mb-2">Time Spent</label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="e.g. 1h 30m"
+                                                    value={timeSpent}
+                                                    onChange={(e) => setTimeSpent(e.target.value)}
+                                                />
+                                            </div>
+                                            
+                                            <button
+                                                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 w-full"
+                                                onClick={() => handleStageChange(currentStage)}
+                                                disabled={updating}
+                                            >
+                                                {updating ? "Updating..." : "Update Status"}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Right column - Sidebar info */}
-                        <div className="lg:col-span-1 space-y-6">
-                            {/* Dates card */}
-                            <div className="bg-white rounded-lg shadow overflow-hidden">
-                                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Dates</h2>
+                        {/* Sidebar */}
+                        <div className="space-y-6">
+                            {/* Status Card */}
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <h2 className="text-sm font-medium text-gray-500 uppercase mb-4">Status</h2>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className={`w-3 h-3 rounded-full ${
+                                        currentStage === work.stages.length - 1
+                                            ? "bg-green-500"
+                                            : "bg-blue-500"
+                                    }`}></div>
+                                    <span className="font-medium">{work.stages[currentStage]}</span>
                                 </div>
-                                <div className="p-4 space-y-3">
-                                    <div className="flex items-center">
-                                        <Calendar className="w-5 h-5 text-gray-400 mr-2" />
-                                        <div>
-                                            <p className="text-xs text-gray-500">Created</p>
-                                            <p className="text-sm font-medium text-gray-700">{new Date(work.startDate).toLocaleDateString()}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center">
-                                        <Clock className="w-5 h-5 text-gray-400 mr-2" />
-                                        <div>
-                                            <p className="text-xs text-gray-500">Deadline</p>
-                                            <p className="text-sm font-medium text-gray-700">{new Date(work.deadline).toLocaleDateString()}</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Days remaining label */}
-                                    {work.deadline && (
-                                        <div className="mt-2 pt-2 border-t border-gray-100">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-gray-500">Days remaining:</span>
-                                                <span
-                                                    className={`text-sm font-medium rounded-full px-2 py-1 ${getDaysRemaining(work.deadline) < 0
-                                                            ? "bg-red-100 text-red-700"
-                                                            : getDaysRemaining(work.deadline) < 3
-                                                                ? "bg-orange-100 text-orange-700"
-                                                                : "bg-green-100 text-green-700"
-                                                        }`}
-                                                >
-                                                    {getDaysRemaining(work.deadline)}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )}
+                                <div className="text-sm text-gray-600">
+                                    Stage {currentStage + 1} of {work.stages.length}
                                 </div>
                             </div>
-
-                            {/* People card */}
-                            <div className="bg-white rounded-lg shadow overflow-hidden">
-                                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">People</h2>
+                            
+                            {/* Dates */}
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <h2 className="text-sm font-medium text-gray-500 uppercase mb-4">Dates</h2>
+                                <div className="space-y-3">
+                                    <div className="flex items-start">
+                                        <Calendar className="w-4 h-4 text-gray-400 mt-1 mr-2" />
+                                        <div>
+                                            <p className="text-sm text-gray-500">Created</p>
+                                            <p className="text-gray-700">{formatDate(work.startDate)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start">
+                                        <Clock className="w-4 h-4 text-gray-400 mt-1 mr-2" />
+                                        <div>
+                                            <p className="text-sm text-gray-500">Deadline</p>
+                                            <p className={`${getDeadlineStatusClass()}`}>
+                                                {formatDate(work.deadline)}
+                                                <span className="block text-sm">
+                                                    {getDaysRemaining()}
+                                                </span>
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="p-4">
-                                    {work.assignedEmployee ? (
-                                        <div className="flex items-start">
-                                            <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
-                                                {work.assignedEmployee.name.charAt(0).toUpperCase()}
+                            </div>
+                            
+                            {/* People */}
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <h2 className="text-sm font-medium text-gray-500 uppercase mb-4">People</h2>
+                                <div className="space-y-3">
+                                    <div className="flex items-center">
+                                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3">
+                                            <User className="w-4 h-4 text-gray-500" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium">{work.assignedTo || "Unassigned"}</p>
+                                            <p className="text-xs text-gray-500">Assignee</p>
+                                        </div>
+                                    </div>
+                                    {work.reporter && (
+                                        <div className="flex items-center">
+                                            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3">
+                                                <User className="w-4 h-4 text-gray-500" />
                                             </div>
                                             <div>
-                                                <p className="text-sm font-medium text-gray-700">{work.assignedEmployee.name}</p>
-                                                <p className="text-xs text-gray-500">{work.assignedEmployee.position}</p>
-                                                <div className="mt-1 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded inline-block">
-                                                    Assignee
-                                                </div>
+                                                <p className="text-sm font-medium">{work.reporter}</p>
+                                                <p className="text-xs text-gray-500">Reporter</p>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="flex items-center text-gray-500">
-                                            <User className="w-5 h-5 mr-2" />
-                                            <p className="text-sm">No assignee</p>
-                                        </div>
                                     )}
-                                </div>
-                            </div>
-
-                            {/* Activity card placeholder - in a real app this would have comments/activity */}
-                            <div className="bg-white rounded-lg shadow overflow-hidden">
-                                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                                    <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Activity</h2>
-                                </div>
-                                <div className="p-4 text-center text-sm text-gray-500">
-                                    <p>No recent activity</p>
                                 </div>
                             </div>
                         </div>
