@@ -8,6 +8,7 @@ import EmployeeDashboard from "./pages/EmployeeDashboard";
 import HomePage from "./pages/Home";
 import AddWork from "./pages/AddWork";
 import WorkDetails from "./pages/WorkDetails";
+import WorkDetail from "./pages/Works";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route path="/employee-dashboard" element={<EmployeeDashboard />} />
             <Route path="/add-work" element={<AddWork />} />
             <Route path="/work-details/:id" element={<WorkDetails />} />
+            <Route path="/works-details/:id" element={<WorkDetail />} />
           </Routes>
         </div>
       </div>

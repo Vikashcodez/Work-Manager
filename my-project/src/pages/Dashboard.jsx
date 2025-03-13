@@ -121,7 +121,7 @@ export default function Dashboard() {
                           </td>
                           <td className="px-4 py-3">
                             <button
-                              onClick={() => navigate(`/work/${work._id}`)}
+                              onClick={() => navigate(`/works-details/${work._id}`)}
                               className="flex items-center bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md"
                             >
                               <Eye className="w-4 h-4 mr-1" />
