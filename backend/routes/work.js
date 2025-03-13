@@ -8,8 +8,8 @@ const router = express.Router();
 
 // ✅ Auto-generate Work ID (WM-00001, WM-00002, ...)
 const generateWorkId = async () => {
-  const lastWork = await Work.findOne().sort({ createdAt: -1 }); 
-  let newId = "WM-00001"; 
+  const lastWork = await Work.findOne().sort({ createdAt: -1 });
+  let newId = "WM-00001";
 
   if (lastWork && lastWork.workId) {
     const lastNumber = parseInt(lastWork.workId.split("-")[1], 10);
@@ -47,7 +47,7 @@ router.post("/add", authMiddleware, async (req, res) => {
       assignedEmployee: employee._id,
       stages,
       currentStage: 0,
-      status: stages[0], 
+      status: stages[0],
       organization: employee.organization || "Unknown",
       activityLog: [
         {
@@ -67,7 +67,24 @@ router.post("/add", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Get Works Assigned to a Specific Employee (Fix: Moved Above `/:id`)
+// ✅ New Route: Get All Works (Required for Frontend Dashboard)
+router.get("/", authMiddleware, async (req, res) => {
+  try {
+    if (!req.user || !req.user.organization) {
+      return res.status(403).json({ msg: "Unauthorized: Organization not found" });
+    }
+
+    const works = await Work.find({ organization: req.user.organization })
+      .populate("assignedEmployee", "name position email organization");
+
+    res.json(works);
+  } catch (error) {
+    console.error("🚨 Error fetching works:", error.message);
+    res.status(500).json({ msg: "Server error", error: error.message });
+  }
+});
+
+// ✅ Get Works Assigned to a Specific Employee (Filtered by Organization)
 router.get("/employee/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -76,7 +93,7 @@ router.get("/employee/:id", authMiddleware, async (req, res) => {
       return res.status(400).json({ msg: "Invalid Employee ID" });
     }
 
-    const works = await Work.find({ assignedEmployee: id })
+    const works = await Work.find({ assignedEmployee: id, organization: req.user.organization }) 
       .populate("assignedEmployee", "name position email");
 
     res.json(works.length ? works : []);
@@ -86,7 +103,7 @@ router.get("/employee/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Get Work by ID (Now Placed Below `/employee/:id`)
+// ✅ Get Work by ID
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -117,7 +134,7 @@ router.get("/:id/activities", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Update Work Stage & Status
+// ✅ Update Work Stage & Status (Admins Can Now Update Too)
 router.put("/update-stage/:id", authMiddleware, async (req, res) => {
   try {
     const { stageIndex, comment, timeSpent } = req.body;
@@ -134,8 +151,9 @@ router.put("/update-stage/:id", authMiddleware, async (req, res) => {
       return res.status(400).json({ msg: "Invalid stage index" });
     }
 
-    if (req.user._id.toString() !== work.assignedEmployee.toString()) {
-      return res.status(403).json({ msg: "Unauthorized: Only the assigned employee can update the work stage" });
+    // ✅ Allow Admins to Update
+    if (req.user.role !== "admin" && req.user._id.toString() !== work.assignedEmployee.toString()) {
+      return res.status(403).json({ msg: "Unauthorized: Only the assigned employee or admin can update the work stage" });
     }
 
     work.currentStage = stageIndex;
