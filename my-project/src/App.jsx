@@ -9,7 +9,7 @@ import HomePage from "./pages/Home";
 import AddWork from "./pages/AddWork";
 import WorkDetails from "./pages/WorkDetails";
 import WorkDetail from "./pages/Works";
-
+import EditWork from "./pages/EditWork";
 function App() {
   return (
     <Router>
@@ -26,6 +26,7 @@ function App() {
             <Route path="/add-work" element={<AddWork />} />
             <Route path="/work-details/:id" element={<WorkDetails />} />
             <Route path="/works-details/:id" element={<WorkDetail />} />
+            <Route path="/edit-work/:id" element={<EditWork />} />
           </Routes>
         </div>
       </div>
