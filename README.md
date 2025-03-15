@@ -1,6 +1,4 @@
-Here's a suggested README for your project:
 
----
 
 # Work Manager
 
